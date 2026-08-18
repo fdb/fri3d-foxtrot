@@ -1,0 +1,21 @@
+{
+  "name": "Foxtrot",
+  "publisher": "Fri3d Camp",
+  "short_description": "Maak van je badge een vossen-baken.",
+  "long_description": "Debug-baken voor de vossenjacht: zendt LoRa-beacons uit als een vos, valideert codes lokaal en toont alles wat er op de ether gebeurt met RSSI en signaalsterkte.",
+  "fullname": "com.enigmeta.foxtrot",
+  "version": "0.1.0",
+  "category": "games",
+  "activities": [
+    {
+      "entrypoint": "assets/foxtrot.py",
+      "classname": "FoxtrotActivity",
+      "intent_filters": [
+        {
+          "action": "main",
+          "category": "launcher"
+        }
+      ]
+    }
+  ]
+}

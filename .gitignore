@@ -1,0 +1,27 @@
+# Python bytecode. The badge runs source from this tree, so anything compiled
+# here is a side effect of a desktop tool (ruff, py_compile, the emulator) and
+# never an artefact anyone should ship.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# MicroPython bytecode. deploy_to_badge.sh compiles to .mpy in a mktemp stage
+# dir, outside the repo — an .mpy in the working tree is an accident.
+*.mpy
+
+# Tool caches and throwaway environments
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Browser-test artifacts
+.playwright-mcp/
+
+# The full multi-fox protocol spec is security-sensitive and must never
+# be committed; only foxhunt-spec-minimal.md belongs in this repo.
+foxhunt-spec.md
