@@ -381,7 +381,7 @@ class SettingsActivity(RadioActivity):
         if r.beaconing:
             self.switch.add_state(lv.STATE.CHECKED)
         else:
-            self.switch.clear_state(lv.STATE.CHECKED)
+            self.switch.remove_state(lv.STATE.CHECKED)
         self._paint_tx(r.beaconing)
 
     def _paint_tx(self, on):
