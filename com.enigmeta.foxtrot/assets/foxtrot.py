@@ -185,20 +185,29 @@ def panel(parent, x, y, w, h, bg=CARD, radius=2):
     return o
 
 
-def focusable(obj, on_click, tight=False, show_focus=True):
+def focusable(obj, on_click, tight=False):
     obj.add_flag(lv.obj.FLAG.CLICKABLE)
     obj.add_flag(lv.obj.FLAG.SCROLL_ON_FOCUS)
-    if show_focus:
-        obj.add_style(
-            _FOCUS_TIGHT if tight else _FOCUS,
-            lv.PART.MAIN | lv.STATE.FOCUSED,
-        )
+    obj.add_style(
+        _FOCUS_TIGHT if tight else _FOCUS,
+        lv.PART.MAIN | lv.STATE.FOCUSED,
+    )
     obj.add_style(_PRESSED, lv.PART.MAIN | lv.STATE.PRESSED)
     g = lv.group_get_default()
     if g:
         g.add_obj(obj)
     obj.add_event_cb(lambda e: on_click(), lv.EVENT.CLICKED, None)
     return obj
+
+
+def focus_anchor(parent, x, y):
+    """Invisible initial focus point; directional input can leave it."""
+    anchor = box(parent, x, y, 1, 1)
+    g = lv.group_get_default()
+    if g:
+        g.add_obj(anchor)
+        lv.group_focus_obj(anchor)
+    return anchor
 
 
 # Every child screen keeps the radio alive. Navigating into settings must not
@@ -228,10 +237,11 @@ class FoxtrotActivity(RadioActivity):
 
         # The only home-screen action: settings are one deliberate navigation
         # away, while the code and status panels are fully non-interactive.
+        focus_anchor(s, 238, 13)
         settings = panel(s, 246, 3, 68, 20, bg=CARD, radius=2)
         sl = label(settings, "INST.", 0, 2, GOLD, w=64, center=True)
         sl.align(lv.ALIGN.CENTER, 0, 0)
-        focusable(settings, self._open_settings, tight=True, show_focus=False)
+        focusable(settings, self._open_settings, tight=True)
 
         # One visual target for a hunter: only the centred, double-size claim
         # code. The creature identity is secret and stays behind settings.
