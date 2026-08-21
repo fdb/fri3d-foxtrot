@@ -163,6 +163,57 @@ class RxToTxTests(unittest.TestCase):
         self.assertIn("send", self.chip.events)
         self.assertEqual(self.link.beacons_sent, 1)
 
+    def test_consecutive_tx_exceptions_schedule_one_hard_recovery(self):
+        scheduled = []
+        recoveries = []
+        self.link._later = lambda delay, callback: scheduled.append((delay, callback))
+        self.link.hard_reset = lambda: recoveries.append("reset") or True
+
+        def successful_bring_up(allow_hard_reset=True):
+            recoveries.append(("bring-up", allow_hard_reset))
+            self.link.ready = True
+            return True
+
+        self.link.bring_up = successful_bring_up
+        self.chip.standby = lambda: -2
+
+        for _ in range(self.module.MAX_CONSECUTIVE_TX_FAILURES):
+            self.assertFalse(
+                self.link._transmit(self.module.build_beacon(self.link.fid()))
+            )
+
+        self.assertFalse(self.link.ready)
+        self.assertEqual(len(scheduled), 1)
+
+        _, recover = scheduled[0]
+        recover()
+
+        self.assertEqual(recoveries, ["reset", ("bring-up", True)])
+        self.assertTrue(self.link.ready)
+
+    def test_success_breaks_the_consecutive_tx_failure_streak(self):
+        scheduled = []
+        self.link._later = lambda delay, callback: scheduled.append((delay, callback))
+
+        working_standby = self.chip.standby
+        self.chip.standby = lambda: -2
+        for _ in range(self.module.MAX_CONSECUTIVE_TX_FAILURES - 1):
+            self.assertFalse(
+                self.link._transmit(self.module.build_beacon(self.link.fid()))
+            )
+
+        self.chip.standby = working_standby
+        self.assertTrue(self.link._transmit(self.module.build_beacon(self.link.fid())))
+
+        self.chip.standby = lambda: -2
+        for _ in range(self.module.MAX_CONSECUTIVE_TX_FAILURES - 1):
+            self.assertFalse(
+                self.link._transmit(self.module.build_beacon(self.link.fid()))
+            )
+
+        self.assertTrue(self.link.ready)
+        self.assertEqual(scheduled, [])
+
 
 if __name__ == "__main__":
     unittest.main()

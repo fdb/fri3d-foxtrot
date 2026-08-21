@@ -67,6 +67,7 @@ CHIP_MODES = {2: "STBY_RC", 3: "STBY_XOSC", 4: "FS", 5: "RX", 6: "TX"}
 SETTLE_MS = 1000  # let the activity transition finish before touching SPI
 MODE_CHECK_MS = 1000
 MAX_REJECTS_BEFORE_RESET = 20
+MAX_CONSECUTIVE_TX_FAILURES = 4
 TX_DEADLINE_MS = 120  # generous vs. 31.0 ms airtime (§3) for TX_DONE to land
 SPI_BUSY_TIMEOUT_MS = 300  # see fox-hunt lora.py: the driver's default is 5 s
 
@@ -302,6 +303,8 @@ class TrotRadio:
         self._last_beacon = 0
         self._last_health_check = 0
         self._consecutive_rejects = 0
+        self._consecutive_tx_failures = 0
+        self._tx_recovery_pending = False
         self._retry_ms = RETRY_MS
         self._retry_pending = False
         self._suspended = False
@@ -458,7 +461,13 @@ class TrotRadio:
     def resume(self):
         self._suspended = False
         self._stop_meshcore()  # it may have been (re)started while we were away
-        if self.radio is not None and not self.ready and not self._retry_pending:
+        if (
+            self.radio is not None
+            and not self.ready
+            and self._consecutive_tx_failures >= MAX_CONSECUTIVE_TX_FAILURES
+        ):
+            self._schedule_tx_recovery()
+        elif self.radio is not None and not self.ready and not self._retry_pending:
             self._retry_pending = True
             self._later(SETTLE_MS, self._bring_up_and_watch)
 
@@ -764,6 +773,48 @@ class TrotRadio:
         except Exception as e:
             print("trot: soft recover failed:", repr(e))
 
+    def _record_tx_success(self):
+        self._consecutive_tx_failures = 0
+
+    def _record_tx_failure(self):
+        self._consecutive_tx_failures += 1
+        if self._consecutive_tx_failures >= MAX_CONSECUTIVE_TX_FAILURES:
+            self._schedule_tx_recovery()
+
+    def _schedule_tx_recovery(self):
+        """Escalate a TX-only wedge that the RX mode check cannot see.
+
+        A failed send is first given the cheap clear-IRQ/start-RX recovery. If
+        several real TX attempts fail without one TX_DONE between them, stop
+        polling immediately and defer a reset until display activity has had
+        time to settle. This is deliberately separate from health_check(): a
+        wedged send path can still accept startReceive() and report MODE_RX.
+        """
+        if self._tx_recovery_pending:
+            return
+        self.ready = False
+        self.status = "TX herstellen"
+        self._tx_recovery_pending = True
+        self._later(SETTLE_MS, self._recover_after_tx_failures)
+
+    def _recover_after_tx_failures(self):
+        self._tx_recovery_pending = False
+        if self._suspended:
+            return
+
+        print(
+            "trot: %d consecutive TX failures, hard resetting"
+            % self._consecutive_tx_failures
+        )
+        self.hard_reset()
+        if self.bring_up():
+            self._consecutive_tx_failures = 0
+            self._retry_ms = RETRY_MS
+            return
+
+        self._retry_ms = RETRY_MS
+        self._schedule_retry()
+
     def _transmit(self, data):
         """Leave continuous RX just long enough to clock out one packet, then
         return to it. Runs inline from poll() on the same call stack; display
@@ -826,7 +877,9 @@ class TrotRadio:
             if not done:
                 self.tx_fails += 1
                 self._log_tx_failure(irq, time.ticks_diff(time.ticks_ms(), t0))
+                self._record_tx_failure()
             else:
+                self._record_tx_success()
                 # Sent replies show in the log so a claim reads as a
                 # conversation; BEACONs stay out — at ~3/s they would drown
                 # the log, and the counter already tells that story.
@@ -839,6 +892,7 @@ class TrotRadio:
             self.tx_fails += 1
             self._push_log("TX! %s" % type(e).__name__)
             self.soft_recover()
+            self._record_tx_failure()
             return False
 
     @staticmethod

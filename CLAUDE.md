@@ -20,6 +20,12 @@ without a radio. Every count on screen is a fact, never an intention;
 beacon counter move, and a failed TX logs the chip's own diagnosis (IRQ word,
 mode, device errors, elapsed ms).
 
+Four consecutive failed TX attempts with no TX_DONE between them trigger an
+escalating recovery. Foxtrot stops polling, waits for display activity to
+settle, pulses the LoRa reset through the CH32 expander, and runs the full
+configure/verify bring-up again. A successful transmission clears the streak;
+the cumulative failed-send count remains diagnostic history.
+
 **The main app is [fri3d-fox-hunt](../fri3d-fox-hunt)** (usually at
 `~/Projects/fri3d-fox-hunt`) — the player app that hunters run. Read its
 `CLAUDE.md` first: the emulator/deploy discipline there (MicroPythonOS
