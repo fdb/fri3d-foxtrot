@@ -11,10 +11,10 @@ It is also a debug tool: everything received is shown with RSSI and a
 validation verdict, next to the radio's own state and the count of BEACONs
 the chip really clocked out.
 
-**It transmits or it listens, and it never glows.** The TX panel toggles
-ZENDT/LUISTER; the radio sits in continuous RX either way, and the log shows
-every frame heard — decoded spec traffic, raw hexdump for the rest, CRC
-failures named. The NeoPixels stay dark: a fox that lights up is findable
+**It transmits or it listens, and it never glows.** The protected settings
+screen toggles ZENDT/UIT; the radio sits in continuous RX either way, and the
+log shows every frame heard — decoded spec traffic, raw hexdump for the rest,
+CRC failures named. The NeoPixels stay dark: a fox that lights up is findable
 without a radio. Every count on screen is a fact, never an intention;
 `_transmit()` returns whether TX_DONE actually landed, only then does the
 beacon counter move, and a failed TX logs the chip's own diagnosis (IRQ word,
@@ -28,12 +28,12 @@ This repo is deliberately small — no accounts, no server, no personas.
 
 ## What lives where
 
-- `com.enigmeta.foxtrot/assets/foxtrot.py` — the one debug screen. Dark
-  command-deck flip of Foxhunt's design language, same as fox-boss. Click the
-  identity panel to change creature (CHAR); click the TX panel to switch
-  between ZENDT (beaconing) and LUISTER (pure receiver — the log shows every
-  frame heard, raw hexdump and CRC failures included, so one badge can listen
-  to another).
+- `com.enigmeta.foxtrot/assets/foxtrot.py` — three screens in the dark
+  command-deck flip of Foxhunt's design language: a display-only home with a
+  large centred claim code, protected settings, and fox-boss's 3-wide creature
+  grid. Home has only one small `INST.` action; creature and transmit controls
+  are one screen deeper so a stray tap cannot silence the fox. Every screen
+  keeps polling the radio while it is foregrounded.
 - `com.enigmeta.foxtrot/assets/trot_radio.py` — everything radio: the
   SX1262 bring-up path proven in fox-hunt's `lora.py` (busy-timeout
   monkeypatch, RF switch, expander reset, health checks), the spec §3 wire
@@ -102,11 +102,12 @@ clean. `trot_radio.start()`/`resume()` therefore stop a running manager
 through its public `stop()`; the user's toggle is untouched, so MeshCore
 returns at the next boot and gets stopped again at the next Foxtrot launch.
 
-## Role and creature persist
+## Creature persists; transmit defaults on
 
-`SharedPreferences("com.enigmeta.foxtrot")` stores `char` and `beaconing`;
-every change saves, `start()` restores. One badge clicked to LUISTER stays
-the bench listener across restarts.
+`SharedPreferences("com.enigmeta.foxtrot")` stores `char`, so a configured
+creature survives restarts. Beaconing deliberately does not: every app start
+begins with transmit enabled. A temporary bench listener therefore becomes a
+findable fox again after restart, even if it was switched off accidentally.
 
 ## The fake radio is desktop-only
 
@@ -130,7 +131,7 @@ One FID byte carries both (spec §2.1): 5 bits CHAR, 3 bits SEQ. CHAR is
 what a hunter sees as a creature — `CREATURE_NAMES` mirrors fox-hunt's
 `creatures.py` roster in id order, and the fox starts at CHAR 0, **Vos**.
 SEQ is fixed at 1 in this deployment (§2.1); nothing changes it. Identity
-changes on the screen only (click the identity panel) — the minimal spec
+changes through the settings screen's creature grid only — the minimal spec
 has no over-the-air reconfiguration path (§6.2).
 
 ## App layout: flat, at the app root

@@ -256,8 +256,8 @@ def describe(m, rssi):
     """One debug-log line for a parsed packet."""
     name = TYPE_NAMES.get(m["type"], "?%X" % m["type"])
     if m["type"] == TYPE_BEACON:
-        # The creature by name: a click on the sending badge's identity panel
-        # must be readable on the listening badge's very next log line.
+        # The creature by name: a settings change on the sending badge must be
+        # readable on the listening badge's very next log line.
         return "%s s%d %s %ddBm" % (
             name,
             fid_seq(m["fid"]),
@@ -944,15 +944,17 @@ _PREFS_APP = "com.enigmeta.foxtrot"
 
 
 def _load_prefs(radio):
-    """Restore the persisted role: creature and ZENDT/LUISTER mode. A badge
-    configured once as the bench fox or as the listener comes back up that
-    way after every restart."""
+    """Restore the creature, but always start with transmission enabled.
+
+    Silencing the badge is useful for bench work, but persisting that setting
+    makes one accidental tap survive every restart and leaves the fox
+    unfindable. ``TrotRadio.__init__`` supplies the safe True default.
+    """
     try:
         from mpos import SharedPreferences
 
         prefs = SharedPreferences(_PREFS_APP)
         radio.char = prefs.get_int("char", radio.char)
-        radio.beaconing = prefs.get_bool("beaconing", radio.beaconing)
     except Exception as e:
         print("trot: prefs load failed:", repr(e))
 
@@ -963,7 +965,6 @@ def _save_prefs(radio):
 
         e = SharedPreferences(_PREFS_APP).edit()
         e.put_int("char", radio.char)
-        e.put_bool("beaconing", radio.beaconing)
         e.commit()
     except Exception as e:
         print("trot: prefs save failed:", repr(e))

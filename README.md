@@ -29,11 +29,13 @@ scripts/deploy_to_badge.sh     # USB deploy to a badge; add --start to launch
 scripts/format.sh              # Ruff + JSON formatting
 ```
 
-The fox starts transmitting by itself, as **Vos** (CHAR 0). Click the
-identity panel for another creature; click the TX panel to switch between
-ZENDT (beaconing) and LUISTER (pure receiver: the log shows every frame
-heard — decoded, raw hexdump, or CRC failure — so one badge can listen to
-another). The protocol spec is in `foxhunt-spec-minimal.md`.
+The fox starts transmitting by itself, as **Vos** (CHAR 0). The main screen
+keeps the 4-digit claim code large and centred. Creature choice and the
+transmit switch live behind the small **INST.** button so a stray tap cannot
+silence the fox. The creature chooser uses the same rarity-coloured grid as
+Foxboss. Transmit always defaults to **AAN** when the app starts; switching it
+off is deliberately temporary. The protocol spec is in
+`foxhunt-spec-minimal.md`.
 
 It transmits at the spec's +14 dBm. The footer shows failed sends and the
 reset count — if either climbs, lower `TX_POWER` in `trot_radio.py` a step.
