@@ -23,6 +23,7 @@ class FakeObject:
         self.flags = []
         self.styles = []
         self.callbacks = {}
+        self.ext_click_area = 0
 
     def add_flag(self, flag):
         self.flags.append(flag)
@@ -32,6 +33,9 @@ class FakeObject:
 
     def add_event_cb(self, callback, code, _user_data):
         self.callbacks.setdefault(code, []).append(callback)
+
+    def set_ext_click_area(self, size):
+        self.ext_click_area = size
 
     def send(self, code, key=None):
         event = types.SimpleNamespace(get_key=lambda: key)
@@ -84,3 +88,13 @@ def test_invisible_anchor_holds_initial_focus_until_navigation_reaches_button():
 
     button.send(lv.EVENT.CLICKED)
     assert clicks == [True]
+
+
+def test_focusable_can_expand_touch_surface_without_changing_visual_size():
+    group = FakeGroup()
+    focusable, _focus_anchor, _lv = load_focus_helpers(group)
+    button = FakeObject()
+
+    focusable(button, lambda: None, touch_pad=28)
+
+    assert button.ext_click_area == 28

@@ -185,9 +185,11 @@ def panel(parent, x, y, w, h, bg=CARD, radius=2):
     return o
 
 
-def focusable(obj, on_click, tight=False):
+def focusable(obj, on_click, tight=False, touch_pad=0):
     obj.add_flag(lv.obj.FLAG.CLICKABLE)
     obj.add_flag(lv.obj.FLAG.SCROLL_ON_FOCUS)
+    if touch_pad:
+        obj.set_ext_click_area(touch_pad)
     obj.add_style(
         _FOCUS_TIGHT if tight else _FOCUS,
         lv.PART.MAIN | lv.STATE.FOCUSED,
@@ -247,7 +249,9 @@ class FoxtrotActivity(RadioActivity):
         settings = panel(s, 246, 3, 68, 20, bg=CARD, radius=2)
         sl = label(settings, "INST.", 0, 2, GOLD, w=64, center=True)
         sl.align(lv.ALIGN.CENTER, 0, 0)
-        focusable(settings, self._open_settings, tight=True)
+        # The visible control stays compact, while its clipped 28 px touch pad
+        # covers roughly x=218..319, y=0..50 on the 320x240 display.
+        focusable(settings, self._open_settings, tight=True, touch_pad=28)
 
         # One visual target for a hunter: only the centred, double-size claim
         # code. The creature identity is secret and stays behind settings.
