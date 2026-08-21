@@ -185,10 +185,14 @@ def panel(parent, x, y, w, h, bg=CARD, radius=2):
     return o
 
 
-def focusable(obj, on_click, tight=False):
+def focusable(obj, on_click, tight=False, show_focus=True):
     obj.add_flag(lv.obj.FLAG.CLICKABLE)
     obj.add_flag(lv.obj.FLAG.SCROLL_ON_FOCUS)
-    obj.add_style(_FOCUS_TIGHT if tight else _FOCUS, lv.PART.MAIN | lv.STATE.FOCUSED)
+    if show_focus:
+        obj.add_style(
+            _FOCUS_TIGHT if tight else _FOCUS,
+            lv.PART.MAIN | lv.STATE.FOCUSED,
+        )
     obj.add_style(_PRESSED, lv.PART.MAIN | lv.STATE.PRESSED)
     g = lv.group_get_default()
     if g:
@@ -227,13 +231,13 @@ class FoxtrotActivity(RadioActivity):
         settings = panel(s, 246, 3, 68, 20, bg=CARD, radius=2)
         sl = label(settings, "INST.", 0, 2, GOLD, w=64, center=True)
         sl.align(lv.ALIGN.CENTER, 0, 0)
-        focusable(settings, self._open_settings, tight=True)
+        focusable(settings, self._open_settings, tight=True, show_focus=False)
 
-        # One visual target for a hunter: creature context above a centred,
-        # double-size four-digit code.
+        # One visual target for a hunter: only the centred, double-size claim
+        # code. The creature identity is secret and stays behind settings.
         cp = panel(s, 6, 34, 308, 94)
-        self.id_name = label(cp, "", 6, 6, GOLD, w=292, center=True)
-        self.id_code = label(cp, "", 6, 28, TEXT, font_code(), w=292, center=True)
+        self.id_code = label(cp, "", 6, 0, TEXT, font_code(), w=292, center=True)
+        self.id_code.align(lv.ALIGN.CENTER, 0, 0)
 
         # Radio truth remains visible but cannot be changed from here.
         sp = panel(s, 6, 134, 308, 32)
@@ -272,7 +276,6 @@ class FoxtrotActivity(RadioActivity):
         r = trot_radio.RADIO
         r.poll()
 
-        self._set(self.id_name, r.name().upper())
         self._set(self.id_code, "%04d" % r.otc_code())
 
         if not r.ready:

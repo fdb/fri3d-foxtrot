@@ -30,11 +30,12 @@ scripts/format.sh              # Ruff + JSON formatting
 ```
 
 The fox starts transmitting by itself, as **Vos** (CHAR 0). The main screen
-keeps the 4-digit claim code large and centred. Creature choice and the
-transmit switch live behind the small **INST.** button so a stray tap cannot
-silence the fox. The creature chooser uses the same rarity-coloured grid as
-Foxboss. Transmit always defaults to **AAN** when the app starts; switching it
-off is deliberately temporary. The protocol spec is in
+keeps only the 4-digit claim code large and centred; the secret creature name
+never appears there or in the packet log (BEACON entries show its numeric id).
+Creature choice and the transmit switch live behind the small **INST.** button
+so a stray tap cannot silence the fox. The creature chooser uses the same
+rarity-coloured grid as Foxboss. Transmit always defaults to **AAN** when the
+app starts; switching it off is deliberately temporary. The protocol spec is in
 `foxhunt-spec-minimal.md`.
 
 It transmits at the spec's +14 dBm. The footer shows failed sends and the

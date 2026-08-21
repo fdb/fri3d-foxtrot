@@ -256,12 +256,12 @@ def describe(m, rssi):
     """One debug-log line for a parsed packet."""
     name = TYPE_NAMES.get(m["type"], "?%X" % m["type"])
     if m["type"] == TYPE_BEACON:
-        # The creature by name: a settings change on the sending badge must be
-        # readable on the listening badge's very next log line.
-        return "%s s%d %s %ddBm" % (
+        # Creature names are secret. The debug log exposes only the numeric
+        # CHAR id needed to diagnose what was actually received on the wire.
+        return "%s s%d id%d %ddBm" % (
             name,
             fid_seq(m["fid"]),
-            creature_name(fid_char(m["fid"])),
+            fid_char(m["fid"]),
             round(rssi),
         )
     if m["type"] == TYPE_CODE_ENTRY:

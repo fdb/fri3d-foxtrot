@@ -29,11 +29,13 @@ This repo is deliberately small — no accounts, no server, no personas.
 ## What lives where
 
 - `com.enigmeta.foxtrot/assets/foxtrot.py` — three screens in the dark
-  command-deck flip of Foxhunt's design language: a display-only home with a
-  large centred claim code, protected settings, and fox-boss's 3-wide creature
-  grid. Home has only one small `INST.` action; creature and transmit controls
-  are one screen deeper so a stray tap cannot silence the fox. Every screen
-  keeps polling the radio while it is foregrounded.
+  command-deck flip of Foxhunt's design language: a display-only home with only
+  a large centred claim code, protected settings, and fox-boss's 3-wide
+  creature grid. The creature name is secret: home never shows it and BEACON
+  log lines expose only the numeric CHAR id. Home has only one small `INST.`
+  action, without an always-visible default focus ring; creature and transmit
+  controls are one screen deeper so a stray tap cannot silence the fox. Every
+  screen keeps polling the radio while it is foregrounded.
 - `com.enigmeta.foxtrot/assets/trot_radio.py` — everything radio: the
   SX1262 bring-up path proven in fox-hunt's `lora.py` (busy-timeout
   monkeypatch, RF switch, expander reset, health checks), the spec §3 wire
