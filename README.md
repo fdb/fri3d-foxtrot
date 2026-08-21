@@ -33,7 +33,7 @@ required.
 1. Launch Foxtrot on the fox badge. It begins broadcasting immediately.
 2. Hide the badge and let hunters track its LoRa signal.
 3. A hunter enters the large four-digit code shown on Foxtrot's screen in the
-   [Fri3d fox-hunt app](https://github.com/fdb/fri3d-fox-hunt).
+   [Fri3d Foxhunt-app](https://github.com/fdb/fri3d-foxhunt).
 4. Foxtrot accepts a nearby, valid claim and sends the hunter its proof.
 
 The main screen deliberately never reveals the selected creature's secret
@@ -77,7 +77,7 @@ word. Beacons transmit at +14 dBm in bursts of one packet every 250 ms; the
 configured silent interval keeps the overall duty cycle at 9.8%.
 
 Claims must match the current one-time code and arrive at or above −85 dBm.
-Foxtrot then replies directly with three low-power `PROOF` packets. The fox is
+Foxtrot then replies directly with three `PROOF` packets. The fox is
 the sole authority for a find.
 
 These defaults target the event's EU 869 MHz deployment. Check the radio rules

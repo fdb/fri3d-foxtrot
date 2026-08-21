@@ -304,6 +304,7 @@ class TrotRadio:
         self._last_health_check = 0
         self._consecutive_rejects = 0
         self._consecutive_tx_failures = 0
+        self._poll_not_before = None
         self._tx_recovery_pending = False
         self._retry_ms = RETRY_MS
         self._retry_pending = False
@@ -324,6 +325,8 @@ class TrotRadio:
         return otc_to_code(self.otc)
 
     def set_char(self, char):
+        if char != self.char:
+            self._defer_radio_work()
         self.char = char
         self._forget_claims()
         _save_prefs(self)
@@ -336,6 +339,8 @@ class TrotRadio:
         self.note = ""
 
     def set_beaconing(self, on):
+        if on != self.beaconing:
+            self._defer_radio_work()
         if on and not self.beaconing:
             # ZENDT is a fresh operator action, not a continuation of the
             # burst/silent phase that happened before LUISTER. Reusing that
@@ -346,6 +351,15 @@ class TrotRadio:
             self._last_beacon = time.ticks_add(now, -T_BCN)
         self.beaconing = on
         _save_prefs(self)
+
+    def _defer_radio_work(self):
+        """Keep SX1262 SPI off the display bus while LVGL redraws controls."""
+        deadline = time.ticks_add(time.ticks_ms(), SETTLE_MS)
+        if (
+            self._poll_not_before is None
+            or time.ticks_diff(deadline, self._poll_not_before) > 0
+        ):
+            self._poll_not_before = deadline
 
     # ------------------------------------------------------------ lifecycle
 
@@ -376,7 +390,7 @@ class TrotRadio:
         self.available = True
         _load_prefs(self)
         self._stop_meshcore()  # the other driver on this chip — see below
-        self._patch_busy_timeout()  # before ANY SPI traffic
+        self._patch_spi_transfer()  # before ANY SPI traffic
         self._drive_rf_switch()
 
         # Deferred, not blocking: configuring the radio while LVGL animates
@@ -460,6 +474,7 @@ class TrotRadio:
 
     def resume(self):
         self._suspended = False
+        self._defer_radio_work()
         self._stop_meshcore()  # it may have been (re)started while we were away
         if (
             self.radio is not None
@@ -544,15 +559,27 @@ class TrotRadio:
         except Exception:
             return None
 
-    def _patch_busy_timeout(self):
-        """Rebind sx1262.py's SPItransfer() BUSY-wait timeout down to
-        SPI_BUSY_TIMEOUT_MS on this radio INSTANCE only — sx1262.py isn't
-        ours to edit. See fox-hunt lora.py for the full story."""
+    def _patch_spi_transfer(self):
+        """Make one SX1262 command one indivisible shared-bus transaction.
+
+        The OS driver manages CS manually across several one-byte SPI calls,
+        but SPI.Device normally releases the ESP32 bus after every call. A
+        display DMA transfer can then land between the command and data byte
+        while LoRa CS is still low. Locking the device makes those calls one
+        transaction. Keep the existing shorter BUSY timeout too; sx1262.py is
+        OS-owned, so both changes are instance-local here.
+        """
         try:
             orig = self.radio.SPItransfer
         except AttributeError:
             print("trot: SPItransfer not found, busy-timeout patch skipped")
             return
+
+        spi = getattr(self.radio, "spi", None)
+        lock = getattr(spi, "lock", None)
+        unlock = getattr(spi, "unlock", None)
+        if lock is None or unlock is None:
+            print("trot: SPI device lock unavailable; command isolation skipped")
 
         def _fast_transfer(
             cmd,
@@ -564,9 +591,24 @@ class TrotRadio:
             waitForBusy,
             timeout=SPI_BUSY_TIMEOUT_MS,
         ):
-            return orig(
-                cmd, cmdLen, write, dataOut, dataIn, numBytes, waitForBusy, timeout
-            )
+            locked = False
+            try:
+                if lock is not None and unlock is not None:
+                    lock()
+                    locked = True
+                return orig(
+                    cmd,
+                    cmdLen,
+                    write,
+                    dataOut,
+                    dataIn,
+                    numBytes,
+                    waitForBusy,
+                    timeout,
+                )
+            finally:
+                if locked:
+                    unlock()
 
         self.radio.SPItransfer = _fast_transfer
 
@@ -664,6 +706,10 @@ class TrotRadio:
         the pending PROOF repeats."""
         if not self.ready:
             return
+        if self._poll_not_before is not None:
+            if time.ticks_diff(time.ticks_ms(), self._poll_not_before) < 0:
+                return
+            self._poll_not_before = None
         try:
             rx_state = self._rx_state()
             if rx_state == RX_READY:
@@ -808,6 +854,7 @@ class TrotRadio:
         )
         self.hard_reset()
         if self.bring_up():
+            self.ready = True
             self._consecutive_tx_failures = 0
             self._retry_ms = RETRY_MS
             return

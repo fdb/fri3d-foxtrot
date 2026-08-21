@@ -1,0 +1,39 @@
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: scripts/format.sh --check
+      - run: uvx pytest tests/ -q
+
+  mpk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: Cache mpy-cross
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/foxtrot/mpy-cross
+          key: mpy-cross-${{ hashFiles('scripts/get_mpy_cross.sh') }}
+      - run: scripts/build_mpk.sh
+      - name: Trim compiler sources from cache
+        if: always()
+        run: rm -rf ~/.cache/foxtrot/mpy-cross/src
+      - uses: actions/upload-artifact@v7
+        with:
+          name: foxtrot-mpk-${{ github.sha }}
+          path: dist/*.mpk
+          if-no-files-found: error

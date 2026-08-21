@@ -22,6 +22,9 @@ venv/
 # Browser-test artifacts
 .playwright-mcp/
 
+# Reproducible BadgeHub release artifacts are generated locally/CI.
+dist/
+
 # The full multi-fox protocol spec is security-sensitive and must never
 # be committed; only foxhunt-spec-minimal.md belongs in this repo.
 foxhunt-spec.md

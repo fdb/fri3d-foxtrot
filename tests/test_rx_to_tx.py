@@ -160,8 +160,81 @@ class RxToTxTests(unittest.TestCase):
         self.link.set_beaconing(True)
         self.link.poll()
 
+        self.assertNotIn("send", self.chip.events)
+
+        self.time.now += self.module.SETTLE_MS
+        self.link._last_health_check = self.time.now
+        self.link.poll()
+
         self.assertIn("send", self.chip.events)
         self.assertEqual(self.link.beacons_sent, 1)
+
+    def test_activity_resume_defers_all_radio_spi_until_display_settles(self):
+        self.link.resume()
+
+        self.link.poll()
+        self.assertEqual(self.chip.events, [])
+
+        self.time.now += self.module.SETTLE_MS - 1
+        self.link.poll()
+        self.assertEqual(self.chip.events, [])
+
+        self.time.now += 1
+        self.link._last_health_check = self.time.now
+        self.link.poll()
+        self.assertIn("send", self.chip.events)
+
+    def test_spi_patch_locks_the_shared_bus_for_the_whole_driver_command(self):
+        events = []
+
+        class Spi:
+            def lock(self):
+                events.append("lock")
+
+            def unlock(self):
+                events.append("unlock")
+
+        class Radio:
+            spi = Spi()
+
+            @staticmethod
+            def SPItransfer(*args):
+                events.append("transfer")
+                return 17
+
+        self.link.radio = Radio()
+        self.link._patch_spi_transfer()
+
+        result = self.link.radio.SPItransfer(None, 0, True, (), (), 0, True)
+
+        self.assertEqual(result, 17)
+        self.assertEqual(events, ["lock", "transfer", "unlock"])
+
+    def test_spi_patch_unlocks_the_shared_bus_when_the_driver_raises(self):
+        events = []
+
+        class Spi:
+            def lock(self):
+                events.append("lock")
+
+            def unlock(self):
+                events.append("unlock")
+
+        class Radio:
+            spi = Spi()
+
+            @staticmethod
+            def SPItransfer(*args):
+                events.append("transfer")
+                raise RuntimeError("driver failed")
+
+        self.link.radio = Radio()
+        self.link._patch_spi_transfer()
+
+        with self.assertRaisesRegex(RuntimeError, "driver failed"):
+            self.link.radio.SPItransfer(None, 0, True, (), (), 0, True)
+
+        self.assertEqual(events, ["lock", "transfer", "unlock"])
 
     def test_consecutive_tx_exceptions_schedule_one_hard_recovery(self):
         scheduled = []

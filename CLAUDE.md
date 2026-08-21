@@ -26,6 +26,20 @@ settle, pulses the LoRa reset through the CH32 expander, and runs the full
 configure/verify bring-up again. A successful transmission clears the streak;
 the cumulative failed-send count remains diagnostic history.
 
+Settings navigation is also a radio quiet period. Every activity resume and
+every transmit/creature control change defers `poll()` for `SETTLE_MS`, keeping
+SX1262 SPI off the display's shared bus during LVGL's 500 ms screen animation
+and control redraw. Without that guard, settings stress can wedge TX and make
+the recovery loop reset repeatedly even though each reset itself succeeds.
+
+The underlying bus fix is stronger than that timing guard. The OS SX1262
+driver holds LoRa CS low across several one-byte `SPI.Device` calls, but the
+device normally releases the shared ESP32 bus between those calls. Display DMA
+could therefore run in the middle of one radio command; the following MISO
+status became `0x00` or `0xFF`, reported as `ERR_CHIP_NOT_FOUND (-2)`. Foxtrot
+wraps each complete `SPItransfer()` in `SPI.Device.lock()`/`unlock()` so a
+command is indivisible. The unlock lives in `finally`, including error paths.
+
 **The main app is [fri3d-fox-hunt](../fri3d-fox-hunt)** (usually at
 `~/Projects/fri3d-fox-hunt`) — the player app that hunters run. Read its
 `CLAUDE.md` first: the emulator/deploy discipline there (MicroPythonOS
