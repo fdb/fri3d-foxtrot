@@ -29,6 +29,22 @@ def load_sync_controls(radio):
     return namespace["_sync_controls"]
 
 
+def load_keypad_control(group, focusable):
+    tree = ast.parse(UI_SOURCE.read_text())
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "keypad_control"
+    )
+    module = ast.Module(body=[function], type_ignores=[])
+    namespace = {
+        "lv": types.SimpleNamespace(group_remove_obj=group.remove_obj),
+        "focusable": focusable,
+    }
+    exec(compile(ast.fix_missing_locations(module), str(UI_SOURCE), "exec"), namespace)
+    return namespace["keypad_control"]
+
+
 class FakeSwitch:
     def __init__(self):
         self.states = {"checked"}
@@ -40,7 +56,32 @@ class FakeSwitch:
         self.states.discard(state)
 
 
+class FakeGroup:
+    def __init__(self, *objects):
+        self.objects = list(objects)
+
+    def remove_obj(self, obj):
+        self.objects.remove(obj)
+
+
 class SettingsControlTests(unittest.TestCase):
+    def test_keypad_focus_uses_panel_instead_of_native_switch(self):
+        switch = FakeSwitch()
+        panel = object()
+        group = FakeGroup(switch)
+        focused = []
+        toggles = []
+
+        helper = load_keypad_control(
+            group, lambda obj, click: focused.append((obj, click))
+        )
+        helper(panel, switch, lambda: toggles.append(True))
+
+        self.assertNotIn(switch, group.objects)
+        self.assertEqual(focused[0][0], panel)
+        focused[0][1]()
+        self.assertEqual(toggles, [True])
+
     def test_syncing_disabled_transmit_uses_supported_switch_api(self):
         radio = types.SimpleNamespace(
             beaconing=False,

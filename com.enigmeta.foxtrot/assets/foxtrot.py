@@ -200,6 +200,12 @@ def focusable(obj, on_click, tight=False):
     return obj
 
 
+def keypad_control(panel, native_widget, on_click):
+    """Focus a panel, not a native widget that edits on arrow keys."""
+    lv.group_remove_obj(native_widget)
+    return focusable(panel, on_click)
+
+
 def focus_anchor(parent, x, y):
     """Invisible initial focus point; directional input can leave it."""
     anchor = box(parent, x, y, 1, 1)
@@ -346,11 +352,8 @@ class SettingsActivity(RadioActivity):
             hexc(GREEN), lv.PART.INDICATOR | lv.STATE.CHECKED
         )
         self.switch.set_style_bg_color(hexc(GOLD), lv.PART.KNOB)
-        self.switch.add_style(_FOCUS_TIGHT, lv.PART.MAIN | lv.STATE.FOCUSED)
-        g = lv.group_get_default()
-        if g:
-            g.add_obj(self.switch)
         self.switch.add_event_cb(self._on_toggle, lv.EVENT.VALUE_CHANGED, None)
+        keypad_control(transmit_panel, self.switch, self._toggle_transmit)
         self.tx_label = label(transmit_panel, "", 240, 45, GREEN, w=56, center=True)
 
         label(
@@ -372,6 +375,15 @@ class SettingsActivity(RadioActivity):
 
     def _on_toggle(self, _evt):
         on = self.switch.has_state(lv.STATE.CHECKED)
+        trot_radio.RADIO.set_beaconing(on)
+        self._paint_tx(on)
+
+    def _toggle_transmit(self):
+        on = not self.switch.has_state(lv.STATE.CHECKED)
+        if on:
+            self.switch.add_state(lv.STATE.CHECKED)
+        else:
+            self.switch.remove_state(lv.STATE.CHECKED)
         trot_radio.RADIO.set_beaconing(on)
         self._paint_tx(on)
 
