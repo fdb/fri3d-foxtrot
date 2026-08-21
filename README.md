@@ -1,46 +1,91 @@
+<div align="center">
+  <img src="com.enigmeta.foxtrot/icon_64x64.png" width="96" height="96" alt="Foxtrot app icon">
+
 # Foxtrot
 
-Turn a Fri3d 2026 badge into a **LoRa fox beacon** for the foxhunt game.
+**Turn a Fri3d Camp 2026 badge into a standalone LoRa fox beacon.**
 
-Normally a hunter chases dedicated fox transmitter hardware. Foxtrot is
-the software stand-in: a MicroPythonOS app that
+</div>
 
-- **beacons** as a fox (spec §5: bursts of one BEACON every 250 ms,
-  9.8 % duty),
-- **answers claims itself**: CODE_ENTRY is validated on the badge — OTC
-  match, RSSI ≥ −85 dBm proximity gate — and PROOF is issued directly
-  (spec §6.1). The fox is the sole authority; no network, no WiFi.
-- **shows the air**: every received packet with type, RSSI and validation
-  verdict, next to the radio's own state and how many BEACONs the chip really
-  clocked out.
+![Foxtrot running in the MicroPythonOS desktop emulator](.github/screenshot.png)
 
-The NeoPixels stay dark on purpose: a fox that glows can be found without a
-radio. Nothing here lights up and nothing listens for other foxes.
+Foxtrot is a [MicroPythonOS](https://github.com/MicroPythonOS/MicroPythonOS)
+app for the Fri3d foxhunt game. It replaces dedicated transmitter hardware:
+the badge broadcasts LoRa beacons, validates a hunter's claim locally, and
+issues proof of a successful find. No Wi-Fi, network, or central service is
+required.
 
-The unmodified [fri3d-fox-hunt](../fri3d-fox-hunt) app completes a full
-find against this beacon: read the 4-digit code off the Foxtrot screen,
-type it in the hunter app, get PROOF.
+## Highlights
 
-## Run
+- **Ready to hunt:** starts transmitting automatically as **Vos** (fox).
+- **Standalone validation:** checks the four-digit one-time code and an
+  RSSI proximity threshold before issuing proof.
+- **Useful diagnostics:** shows received packet types, signal strength,
+  validation results, sent beacons, failed sends, and radio resets.
+- **Hard to spot:** keeps the badge's NeoPixels dark, so hunters need their
+  radios rather than their eyes.
+- **Accident resistant:** creature selection and the transmit switch live
+  behind the small **INST.** button; transmit is enabled again after every
+  restart.
+
+## Playing
+
+1. Launch Foxtrot on the fox badge. It begins broadcasting immediately.
+2. Hide the badge and let hunters track its LoRa signal.
+3. A hunter enters the large four-digit code shown on Foxtrot's screen in the
+   [Fri3d fox-hunt app](https://github.com/fdb/fri3d-fox-hunt).
+4. Foxtrot accepts a nearby, valid claim and sends the hunter its proof.
+
+The main screen deliberately never reveals the selected creature's secret
+name. Open **INST.** to choose a creature or temporarily stop transmitting.
+
+## Run and develop
+
+The desktop emulator currently supports macOS. The launcher script downloads
+the prebuilt MicroPythonOS package on first use and connects Foxtrot's fake,
+scripted radio.
 
 ```sh
-scripts/run_on_mac.sh          # macOS SDL emulator (fake radio, scripted hunter)
-scripts/deploy_to_badge.sh     # USB deploy to a badge; add --start to launch
-scripts/format.sh              # Ruff + JSON formatting
+scripts/run_on_mac.sh
 ```
 
-The fox starts transmitting by itself, as **Vos** (CHAR 0). The main screen
-keeps only the 4-digit claim code large and centred; the secret creature name
-never appears there or in the packet log (BEACON entries show its numeric id).
-Creature choice and the transmit switch live behind the small **INST.** button
-so a stray tap cannot silence the fox. The creature chooser uses the same
-rarity-coloured grid as Foxboss. Transmit always defaults to **AAN** when the
-app starts; switching it off is deliberately temporary. The protocol spec is in
-`foxhunt-spec-minimal.md`.
+To deploy the working tree to a USB-connected badge:
 
-It transmits at the spec's +14 dBm. The footer shows failed sends and the
-reset count — if either climbs, lower `TX_POWER` in `trot_radio.py` a step.
+```sh
+scripts/deploy_to_badge.sh --start
+```
 
-The fake radio runs on the emulator only. On a badge the app always drives
-the real SX1262: if the chip does not answer, the footer says so and the app
-keeps resetting and re-initialising it until it does.
+The deploy script requires [`uv`](https://docs.astral.sh/uv/) and uses
+`mpremote` without modifying the badge firmware. It refuses dirty working trees
+by default; pass `--force` only when intentionally testing uncommitted code.
+
+Useful contributor commands:
+
+```sh
+scripts/format.sh                 # Format Python and JSON
+scripts/format.sh --check         # Check formatting
+uvx pytest tests/ -q              # Run the test suite
+scripts/build_mpk.sh              # Build the BadgeHub .mpk in dist/
+```
+
+## Radio and protocol
+
+Foxtrot implements the repository's
+[single-beacon foxhunt specification](foxhunt-spec-minimal.md). It uses
+869.4625 MHz, SF7, 125 kHz bandwidth, coding rate 4:5, and the private LoRa sync
+word. Beacons transmit at +14 dBm in bursts of one packet every 250 ms; the
+configured silent interval keeps the overall duty cycle at 9.8%.
+
+Claims must match the current one-time code and arrive at or above −85 dBm.
+Foxtrot then replies directly with three low-power `PROOF` packets. The fox is
+the sole authority for a find.
+
+These defaults target the event's EU 869 MHz deployment. Check the radio rules
+and permitted frequencies for your location before transmitting elsewhere.
+
+## Hardware behaviour
+
+On a badge, Foxtrot always uses the real SX1262 radio. If the chip does not
+respond, the footer reports the problem while the app resets and reinitialises
+it with a bounded retry delay. The fake radio is available only in the desktop
+emulator, so a hardware failure can never look like a successful transmission.
