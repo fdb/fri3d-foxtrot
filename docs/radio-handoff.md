@@ -40,10 +40,12 @@ reconfigures the SX1262 underneath any other app. This OS release has **no**
 it is a free-for-all, and the symptom is maddening: random TX failures and
 chip lockups on one badge while an identical badge is clean.
 
-**Fix:** at radio start (and on activity resume), stop a running manager
-through its public API — see `trot_radio._stop_meshcore()`. Check
-`sys.modules.get("meshcore_manager")`; if the manager `is_running()`, call
-`stop()`. Leave the user's persistent toggle alone.
+An app-specific `stop()` call is not a complete fix. Current MeshCore can
+have a delayed bring-up thread that continues after `stop()` returns. The
+safe platform fix is ownership in `LoRaManager` with an acquire/release (or
+equivalent quiescence acknowledgement) that every radio app observes. Until
+then, treat the optional `sys.modules`/`stop()` compatibility path as best
+effort, not as proof that the chip has one owner.
 
 ## 3. Display DMA vs. the radio's manual-CS SPI (the contention fox-hunt knew about)
 
@@ -63,21 +65,25 @@ Foxtrot went from ~72 % failed sends to ~0 with two UI changes:
   meters updated every tick) and fox-boss's fox rows deserve the same audit:
   any label rewritten with an unchanged value, every tick, is bus pressure.
 
-## 4. Two `_transmit()` bugs both apps inherited from the same ancestor
+## 4. The RX→TX handoff must be explicit and preserve a pending packet
 
-Both repos' `_transmit()` has this shape — and both halves hide a bug:
+Foxtrot's hardened sequence is:
 
-- **Deadline anchor.** Start the TX_DONE wait deadline **after** `send()`
-  returns, not before. `send()` is a pile of SPI commands whose BUSY waits
-  can eat 100+ ms on a busy bus; a deadline anchored before it expires with
-  the wait loop never having run, so every real transmission is treated as
-  failed — and the code then re-arms RX mid-flight or miscounts.
-- **IRQ clearing eats received packets.** After the TX wait, the code calls
-  `clearIrqStatus()` then `startReceive()`. If a frame landed during the
-  wait (RX_DONE set alongside/instead of TX_DONE), the clear silently
-  discards it. For a fox that is fatal — it eats the hunter's CODE_ENTRY
-  retry exactly while answering the previous one. Check `IRQ_RX_ANY` before
-  clearing and read the packet out first (see Foxtrot's `_transmit()`).
+1. Classify the RX latch as EMPTY, READY, or SUSPECT. Drain READY before TX;
+   defer on SUSPECT. A boolean `rx_pending() == False` is not enough because
+   it conflates empty with a status read that deliberately left the IRQ and
+   payload for the next poll.
+2. Enter STDBY_RC explicitly, then reaffirm automatic DIO2 RF-switch control.
+   The pinned Python port jumps directly from continuous RX to
+   `startTransmit()`; current upstream RadioLib performs the standby step.
+3. Send. The driver writes TX at buffer base 0 and clears every IRQ, which is
+   why steps 1–2 must happen before this call.
+4. Start the TX_DONE deadline after `send()` returns, then clear TX status and
+   re-enter continuous RX.
+
+A post-send RX check is only a defensive extra. It cannot rescue a packet
+that was already pending: the driver's `startTransmit()` has overwritten the
+shared buffer, changed the IRQ mapping to TX-only, and cleared the old latch.
 
 ## 5. Diagnostics worth porting
 

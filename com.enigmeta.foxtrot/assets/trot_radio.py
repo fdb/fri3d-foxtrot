@@ -87,6 +87,10 @@ IRQ_RX_ANY = 0b0000000010 | 0b0000100000 | 0b0001000000  # RX_DONE|HEADER_ERR|CR
 IRQ_TX_DONE = 0b0000000001
 IRQ_TX_ANY = IRQ_TX_DONE | 0b1000000000  # TX_DONE|TIMEOUT
 
+RX_EMPTY = 0
+RX_READY = 1
+RX_SUSPECT = 2
+
 # CH32 expander config byte (fri3d_2026 only):
 #   bit 4 = LoRa reset (1 = released)   bit 1 = LCD reset   bit 0 = AUX 3v3
 EXPANDER_LORA_HELD = 0x03
@@ -329,6 +333,14 @@ class TrotRadio:
         self.note = ""
 
     def set_beaconing(self, on):
+        if on and not self.beaconing:
+            # ZENDT is a fresh operator action, not a continuation of the
+            # burst/silent phase that happened before LUISTER. Reusing that
+            # old phase can put the newly-enabled transmitter straight into
+            # T_SILENT, making RX -> TX appear not to work for four seconds.
+            now = time.ticks_ms()
+            self._burst_at = None
+            self._last_beacon = time.ticks_add(now, -T_BCN)
         self.beaconing = on
         _save_prefs(self)
 
@@ -644,8 +656,14 @@ class TrotRadio:
         if not self.ready:
             return
         try:
-            if self.rx_pending():
+            rx_state = self._rx_state()
+            if rx_state == RX_READY:
                 self.read_packet()
+            elif rx_state == RX_SUSPECT:
+                # Preserve the latch for a later clean read. In particular,
+                # do not fall through to TX: startTransmit() uses the same
+                # buffer base and clears every IRQ, destroying this packet.
+                return
             elif (
                 time.ticks_diff(time.ticks_ms(), self._last_health_check)
                 >= MODE_CHECK_MS
@@ -686,13 +704,19 @@ class TrotRadio:
         return pos < T_BURST
 
     def rx_pending(self):
-        """True if a packet is really waiting; suspicious status reads are
-        retried rather than acted on (the IRQ stays latched, so a real packet
-        is picked up on a later poll)."""
+        """Compatibility boolean for callers that only need READY/other."""
+        return self._rx_state() == RX_READY
+
+    def _rx_state(self):
+        """Classify the receive latch without equating suspect with empty.
+
+        RX_SUSPECT is deliberately distinct: the IRQ stays latched for a
+        later poll, and a transmitter must not overwrite its shared buffer.
+        """
         irq = self.radio.getIrqStatus()
         if not (irq & IRQ_RX_ANY):
             self._consecutive_rejects = 0
-            return False
+            return RX_EMPTY
 
         if (
             self.radio.getIrqStatus() != irq
@@ -706,10 +730,10 @@ class TrotRadio:
                 )
                 self._consecutive_rejects = 0
                 self.soft_recover()
-            return False
+            return RX_SUSPECT
 
         self._consecutive_rejects = 0
-        return True
+        return RX_READY
 
     ERR_CRC = -7  # sx1262.py's ERR_CRC_MISMATCH
 
@@ -742,8 +766,8 @@ class TrotRadio:
 
     def _transmit(self, data):
         """Leave continuous RX just long enough to clock out one packet, then
-        return to it. Runs inline from poll() — always the same call stack,
-        nothing else on this SPI bus to race.
+        return to it. Runs inline from poll() on the same call stack; display
+        DMA still shares the SPI host, so keep this sequence compact.
 
         Returns True only when the chip actually reported TX_DONE. Callers
         count what went out, never what was attempted: a beacon counter that
@@ -757,7 +781,27 @@ class TrotRadio:
         mid-transmit, which locks the chip up within seconds."""
         t0 = time.ticks_ms()
         try:
-            self.radio.send(bytes(data))  # returns once BUSY clears — that
+            # One last receive check closes the race between poll()'s check
+            # and this call. The SX1262 has one shared buffer at base 0;
+            # startTransmit() writes TX bytes there and clears every IRQ.
+            rx_state = self._rx_state()
+            if rx_state == RX_SUSPECT:
+                return False
+            if rx_state == RX_READY:
+                self.read_packet()
+
+            # The pinned Python driver jumps straight from continuous RX to
+            # startTransmit(). Current RadioLib explicitly enters STDBY_RC
+            # first. Do the same, and reaffirm *automatic* DIO2 RF-switch
+            # control so RX -> TX always changes the Wio module's antenna
+            # route. True means automatic (high only in TX), not pin-high.
+            self._driver_ok(self.radio.standby(), "standby")
+            self._driver_ok(self.radio.setDio2AsRfSwitch(True), "DIO2 RF switch")
+
+            send_result = self.radio.send(bytes(data))
+            if isinstance(send_result, tuple) and len(send_result) > 1:
+                self._driver_ok(send_result[1], "send")
+            # send() returns once BUSY clears — that
             # covers issuing the command, not the transmission itself.
             irq = 0
             # Anchor the deadline AFTER send() returns: send() is itself a
@@ -772,10 +816,10 @@ class TrotRadio:
                 time.sleep_ms(2)
             done = bool(irq & IRQ_TX_DONE)  # the chip's TIMEOUT bit is not "sent"
             if irq & IRQ_RX_ANY:
-                # A frame landed during the TX wait. Read it out BEFORE
-                # clearing IRQ status, or the clear silently discards it —
-                # a fox that eats the CODE_ENTRY it was waiting for, exactly
-                # while answering, is the worst possible packet to lose.
+                # Defensive only: normal startTransmit() maps TX IRQs and the
+                # chip cannot receive while transmitting. If another owner or
+                # a garbled status nevertheless exposes RX here, drain before
+                # the unconditional clear below.
                 self.read_packet()
             self.radio.clearIrqStatus()
             self.radio.startReceive()
@@ -796,6 +840,12 @@ class TrotRadio:
             self._push_log("TX! %s" % type(e).__name__)
             self.soft_recover()
             return False
+
+    @staticmethod
+    def _driver_ok(result, operation):
+        """Turn the driver's integer error convention into an exception."""
+        if result not in (None, 0):
+            raise RuntimeError("%s failed: %r" % (operation, result))
 
     def _log_tx_failure(self, irq, elapsed):
         """One log line naming why TX_DONE never came, straight from the chip:

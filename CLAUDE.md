@@ -87,12 +87,25 @@ RX side: TX_DONE reports success while the PA fires into the receive path and
 only close-range leakage radiates. And never toggle GPIO46 around a send:
 cutting the switch gate mid-transmit locks the chip up within seconds.
 
+The RX→TX boundary is explicit. The pinned Python driver omits the
+`standby()` that current RadioLib performs before `startTransmit()`, so
+Foxtrot enters STDBY_RC itself and reaffirms
+`setDio2AsRfSwitch(True)` before every send. That argument means automatic
+switch control (DIO2 high only while the chip is in TX), not a permanently
+high DIO2. A final tri-state RX-latch check drains a valid packet and defers
+TX on a suspect read, because TX and RX share buffer base 0 and the driver's
+send path clears all IRQs.
+
+Switching LUISTER→ZENDT starts a fresh beacon burst. Do not reuse the old
+burst clock: it may currently be in `T_SILENT`, which makes a newly enabled
+transmitter look dead even though it is only waiting out the old cycle.
+
 `TX_POWER = 14` dBm, spec §7's fox BEACON power. The lockups that once
 forced it down to +4 happened while the PA fired into the wrong side of the
 switch; with the switch right, +14 holds. If `mislukt` or the reset count in
 the footer climbs, drop back a step.
 
-## MeshCore fights for this radio
+## MeshCore is an optional conflicting owner
 
 The OS ships `org.fri3d.meshcore` with a boot service: when its "background
 radio service" toggle is on (per badge, persistent, set from its Me tab), a
@@ -100,9 +113,12 @@ radio service" toggle is on (per badge, persistent, set from its Me tab), a
 watchdog re-arms and reconfigures the chip underneath whoever else uses it,
 and this OS release has no `LoRaManager.acquire()` arbitration. The symptom
 is random TX failures and lockups on one badge while an identical badge is
-clean. `trot_radio.start()`/`resume()` therefore stop a running manager
-through its public `stop()`; the user's toggle is untouched, so MeshCore
-returns at the next boot and gets stopped again at the next Foxtrot launch.
+clean. Foxtrot's compatibility check only looks in `sys.modules`; it neither
+requires nor imports/installs MeshCore. If an already-loaded manager reports
+itself running, Foxtrot asks it to stop and leaves the user's persistent
+toggle untouched. This is not OS-level arbitration: current MeshCore can
+still have delayed work after `stop()` returns. A general solution belongs
+in `LoRaManager.acquire()/release()`, not in another app-specific import.
 
 ## Creature persists; transmit defaults on
 
